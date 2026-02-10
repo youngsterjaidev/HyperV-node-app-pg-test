@@ -11,18 +11,34 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// PostgreSQL Connection Pool
-const pool = new Pool({
+// ==========================================
+// 1. FIXED DATABASE CONNECTION
+// ==========================================
+const dbConfig = {
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'password',
+  // FIX: Added 'process.env.DB_PASS' to match your Kubernetes Env Var
+  password: process.env.DB_PASSWORD || process.env.DB_PASS || 'password',
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'test_db'
+  database: process.env.DB_NAME || 'app', // Changed default to 'app' to match your setup
+};
+
+// Log connection details (for debugging, but hide the password)
+console.log('🔌 Attempting DB Connection:', {
+  ...dbConfig,
+  password: dbConfig.password ? '****' : '(none)' 
 });
+
+const pool = new Pool(dbConfig);
 
 // Initialize database table
 const initializeDB = async () => {
   try {
+    // Basic connectivity check
+    await pool.query('SELECT NOW()'); 
+    console.log('✅ Database connected successfully!');
+
+    // Create Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -32,9 +48,11 @@ const initializeDB = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('Database table initialized successfully');
+    console.log('✅ Users table ready');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('❌ FATAL: Could not connect to database.');
+    console.error('   Error:', error.message);
+    // Don't kill the process immediately in dev, just log it
   }
 };
 
@@ -166,13 +184,11 @@ pool.on('error', (err) => {
 });
 
 initializeDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`✓ Server is running on http://localhost:${PORT}`);
-    console.log(`✓ Database connected to ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}`);
+  app.listen(PORT, '0.0.0.0', () => { // Bind to 0.0.0.0 for Kubernetes
+    console.log(`✓ Server is running on http://0.0.0.0:${PORT}`);
   });
 }).catch(error => {
   console.error('Failed to start server:', error);
-  process.exit(1);
 });
 
 // Graceful shutdown
