@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management CRUD</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            padding: 8px 15px;
+            width: auto;
+            font-size: 0.9rem;
+        }
+
+        .btn-delete:hover {
+            box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+
+        .btn-update {
+            background: #28a745;
+            padding: 8px 15px;
+            width: auto;
+            font-size: 0.9rem;
+            margin-right: 5px;
+        }
+
+        .btn-update:hover {
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .users-table thead {
+            background: #667eea;
+            color: white;
+        }
+
+        .users-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .users-table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .users-table tbody tr:hover {
+            background: #f0f0f0;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-style: italic;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+
+        .edit-section {
+            display: none;
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .edit-section.active {
+            display: block;
+        }
+
+        .edit-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👥 User Management System</h1>
+            <p>Create, Read, Update, and Delete Users</p>
+        </header>
+
+        <div class="content">
+            <!-- CREATE/UPDATE Section -->
+            <div class="section">
+                <h2>Add / Edit User</h2>
+                
+                <div id="editSection" class="edit-section">
+                    <h3>Editing User</h3>
+                    <button class="btn-secondary" onclick="cancelEdit()">Cancel Edit</button>
+                </div>
+
+                <div id="formMessage" class="message"></div>
+
+                <form id="userForm" onsubmit="handleAddUser(event)">
+                    <div class="form-group">
+                        <label for="name">Full Name *</label>
+                        <input type="text" id="name" placeholder="Enter full name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" placeholder="Enter email address" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="age">Age</label>
+                        <input type="number" id="age" placeholder="Enter age" min="1" max="150">
+                    </div>
+
+                    <button type="submit" id="submitBtn">Add User</button>
+                </form>
+            </div>
+
+            <!-- READ Section -->
+            <div class="section">
+                <h2>All Users</h2>
+                <div id="readMessage" class="message"></div>
+                <div id="usersList">
+                    <p class="loading">Loading users...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/users';
+        let editingUserId = null;
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUsers();
+        });
+
+        // LOAD USERS
+        async function loadUsers() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+
+                const usersList = document.getElementById('usersList');
+
+                if (data.users.length === 0) {
+                    usersList.innerHTML = '<p class="no-data">No users found. Add one to get started!</p>';
+                    return;
+                }
+
+                let html = '<table class="users-table"><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Age</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+
+                data.users.forEach(user => {
+                    const createdDate = new Date(user.created_at).toLocaleDateString();
+                    html += `
+                        <tr>
+                            <td>#${user.id}</td>
+                            <td>${escapeHtml(user.name)}</td>
+                            <td>${escapeHtml(user.email)}</td>
+                            <td>${user.age || '-'}</td>
+                            <td>${createdDate}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn-update" onclick="editUser(${user.id})">Edit</button>
+                                    <button class="btn-delete" onclick="deleteUser(${user.id})">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+                usersList.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading users:', error);
+                document.getElementById('usersList').innerHTML = '<p class="no-data">Error loading users. Please refresh the page.</p>';
+            }
+        }
+
+        // CREATE/UPDATE USER
+        async function handleAddUser(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const age = document.getElementById('age').value;
+
+            if (!name || !email) {
+                showMessage('formMessage', 'Name and email are required', 'error');
+                return;
+            }
+
+            const userData = {
+                name,
+                email,
+                age: age ? parseInt(age) : null
+            };
+
+            try {
+                const url = editingUserId ? `${API_URL}/${editingUserId}` : API_URL;
+                const method = editingUserId ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(userData)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showMessage('formMessage', data.error || 'Error saving user', 'error');
+                    return;
+                }
+
+                const successMsg = editingUserId ? 'User updated successfully!' : 'User created successfully!';
+                showMessage('formMessage', successMsg, 'success');
+
+                // Reset form
+                document.getElementById('userForm').reset();
+                cancelEdit();
+                
+                // Reload users list
+                loadUsers();
+            } catch (error) {
+                console.error('Error saving user:', error);
+                showMessage('formMessage', 'Error saving user. Please try again.', 'error');
+            }
+        }
+
+        // EDIT USER
+        async function editUser(userId) {
+            try {
+                const response = await fetch(`${API_URL}/${userId}`);
+                const user = await response.json();
+
+                if (!response.ok) {
+                    showMessage('formMessage', 'Error loading user data', 'error');
+                    return;
+                }
+
+                document.getElementById('name').value = user.name;
+                document.getElementById('email').value = user.email;
+                document.getElementById('age').value = user.age || '';
+
+                editingUserId = userId;
+                document.getElementById('editSection').classList.add('active');
+                document.getElementById('submitBtn').textContent = 'Update User';
+                document.getElementById('userForm').scrollIntoView({ behavior: 'smooth' });
+
+                showMessage('formMessage', 'Edit the user details and click "Update User"', 'success');
+            } catch (error) {
+                console.error('Error loading user:', error);
+                showMessage('formMessage', 'Error loading user', 'error');
+            }
+        }
+
+        // CANCEL EDIT
+        function cancelEdit() {
+            editingUserId = null;
+            document.getElementById('userForm').reset();
+            document.getElementById('editSection').classList.remove('active');
+            document.getElementById('submitBtn').textContent = 'Add User';
+            clearMessage('formMessage');
+        }
+
+        // DELETE USER
+        async function deleteUser(userId) {
+            if (!confirm('Are you sure you want to delete this user?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showMessage('readMessage', data.error || 'Error deleting user', 'error');
+                    return;
+                }
+
+                showMessage('readMessage', 'User deleted successfully!', 'success');
+                loadUsers();
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                showMessage('readMessage', 'Error deleting user', 'error');
+            }
+        }
+
+        // UTILITY FUNCTIONS
+        function showMessage(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `message ${type}`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                clearMessage(elementId);
+            }, 5000);
+        }
+
+        function clearMessage(elementId) {
+            const element = document.getElementById(elementId);
+            element.textContent = '';
+            element.className = 'message';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
