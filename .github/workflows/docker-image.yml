@@ -2,9 +2,9 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "jaam" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "jaam" ]
+    branches: [ "main" ]
 
 jobs:
 
@@ -19,7 +19,7 @@ jobs:
       run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag ${{ secrets.DOCKER_USERNAME }}/my-image-name:latest
+      run: docker build . --file Dockerfile --tag ${{ secrets.DOCKER_USERNAME }}/hyperv-repo:azlocal
 
     - name: Push Docker image
-      run: docker push ${{ secrets.DOCKER_USERNAME }}/my-image-name:latest
+      run: docker push ${{ secrets.DOCKER_USERNAME }}/hyperv-repo:azlocal
