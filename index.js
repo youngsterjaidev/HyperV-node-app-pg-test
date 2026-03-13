@@ -1,5 +1,5 @@
 const express = require('express');
-const { Pool } = require('pg');
+const sql = require('mssql');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -12,53 +12,59 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==========================================
-// 1. FIXED DATABASE CONNECTION
+// MSSQL DATABASE CONNECTION
 // ==========================================
 const dbConfig = {
-  user: process.env.DB_USER || 'postgres',
-  // FIX: Added 'process.env.DB_PASS' to match your Kubernetes Env Var
+  user: process.env.DB_USER || 'sa',
   password: process.env.DB_PASSWORD || process.env.DB_PASS || 'password',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'app', // Changed default to 'app' to match your setup
+  server: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT) || 1433,
+  database: process.env.DB_NAME || 'app',
+  options: {
+    encrypt: false,
+    trustServerCertificate: true
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
+  }
 };
 
-// Log connection details (for debugging, but hide the password)
 console.log('🔌 Attempting DB Connection:', {
   ...dbConfig,
-  password: dbConfig.password ? '****' : '(none)' 
+  password: dbConfig.password ? '****' : '(none)'
 });
 
-const pool = new Pool(dbConfig);
+let pool;
 
 // Initialize database table
 const initializeDB = async () => {
   try {
-    // Basic connectivity check
-    await pool.query('SELECT NOW()'); 
-    console.log('✅ Database connected successfully!');
+    pool = await sql.connect(dbConfig);
+    console.log('✅ MSSQL Database connected successfully!');
 
-    // Create Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        age INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='users' AND xtype='U')
+      CREATE TABLE users (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        name NVARCHAR(100) NOT NULL,
+        email NVARCHAR(100) UNIQUE NOT NULL,
+        age INT,
+        created_at DATETIME DEFAULT GETDATE()
       )
     `);
+
     console.log('✅ Users table ready');
   } catch (error) {
     console.error('❌ FATAL: Could not connect to database.');
-    console.error('   Error:', error.message);
-    // Don't kill the process immediately in dev, just log it
+    console.error('Error:', error.message);
   }
 };
 
 // ===== CRUD OPERATIONS =====
 
-// CREATE - Add a new user
+// CREATE
 app.post('/users', async (req, res) => {
   try {
     const { name, email, age } = req.body;
@@ -67,133 +73,152 @@ app.post('/users', async (req, res) => {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    const result = await pool.query(
-      'INSERT INTO users (name, email, age) VALUES ($1, $2, $3) RETURNING *',
-      [name, email, age]
-    );
+    const result = await pool.request()
+      .input('name', sql.NVarChar, name)
+      .input('email', sql.NVarChar, email)
+      .input('age', sql.Int, age)
+      .query(`
+        INSERT INTO users (name, email, age)
+        OUTPUT INSERTED.*
+        VALUES (@name, @email, @age)
+      `);
 
     res.status(201).json({
       message: 'User created successfully',
-      user: result.rows[0]
+      user: result.recordset[0]
     });
+
   } catch (error) {
     console.error('Error creating user:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// READ - Get all users
+// READ ALL
 app.get('/users', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM users ORDER BY id ASC');
+    const result = await pool.request()
+      .query('SELECT * FROM users ORDER BY id ASC');
+
     res.json({
-      count: result.rows.length,
-      users: result.rows
+      count: result.recordset.length,
+      users: result.recordset
     });
+
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// READ - Get user by ID
+// READ BY ID
 app.get('/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const result = await pool.request()
+      .input('id', sql.Int, req.params.id)
+      .query('SELECT * FROM users WHERE id = @id');
 
-    if (result.rows.length === 0) {
+    if (result.recordset.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(result.recordset[0]);
+
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// UPDATE - Update user by ID
+// UPDATE
 app.put('/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
     const { name, email, age } = req.body;
+    const id = req.params.id;
 
-    // Check if user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
+    const check = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM users WHERE id = @id');
+
+    if (check.recordset.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Update only provided fields
-    const currentUser = checkResult.rows[0];
-    const updateName = name || currentUser.name;
-    const updateEmail = email || currentUser.email;
-    const updateAge = age !== undefined ? age : currentUser.age;
+    const current = check.recordset[0];
 
-    const result = await pool.query(
-      'UPDATE users SET name = $1, email = $2, age = $3 WHERE id = $4 RETURNING *',
-      [updateName, updateEmail, updateAge, id]
-    );
+    const updateName = name || current.name;
+    const updateEmail = email || current.email;
+    const updateAge = age !== undefined ? age : current.age;
+
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('name', sql.NVarChar, updateName)
+      .input('email', sql.NVarChar, updateEmail)
+      .input('age', sql.Int, updateAge)
+      .query(`
+        UPDATE users
+        SET name=@name, email=@email, age=@age
+        OUTPUT INSERTED.*
+        WHERE id=@id
+      `);
 
     res.json({
       message: 'User updated successfully',
-      user: result.rows[0]
+      user: result.recordset[0]
     });
+
   } catch (error) {
     console.error('Error updating user:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// DELETE - Delete user by ID
+// DELETE
 app.delete('/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
 
-    // Check if user exists
-    const checkResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-    if (checkResult.rows.length === 0) {
+    const check = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM users WHERE id = @id');
+
+    if (check.recordset.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM users WHERE id = @id');
 
     res.json({ message: 'User deleted successfully', id });
+
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Serve HTML page on default route
+// Serve HTML
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Health check endpoint
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'Server is running' });
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-});
-
 initializeDB().then(() => {
-  app.listen(PORT, '0.0.0.0', () => { // Bind to 0.0.0.0 for Kubernetes
-    console.log(`✓ Server is running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✓ Server running on http://0.0.0.0:${PORT}`);
   });
-}).catch(error => {
-  console.error('Failed to start server:', error);
 });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Closing database connection...');
-  await pool.end();
+  await sql.close();
   process.exit(0);
 });
